@@ -39,15 +39,14 @@
 ;;
 
 ;;; Code:
-(require 'dart-mode)
 (require 'company)
 (require 'pos-tip)
 
-(defun dart--company-prepare-candidates (response)
+(defun dart--company-prepare-candidates (msg)
   "Build completion from the parsed data received from the analysis server.
 
-Argument RESPONSE contains the candidates, documentation, parameters to be displayed."
-  (-when-let* ((completions (cdr (assq 'results (assq 'params response)))))
+Argument MSG contains the candidates, documentation, parameters to be displayed."
+  (-when-let* ((completions (cdr (assq 'results msg))))
     (mapcar
      (lambda (completion)
        (let ((docSummary (assoc 'docSummary completion))
@@ -60,6 +59,14 @@ Argument RESPONSE contains the candidates, documentation, parameters to be displ
 		      (car docComplete) (cdr docComplete))))
      completions)))
 
+(defun dart--completion-result (completion-id callback buffer)
+  (dart--analysis-server-subscribe
+   "completion.results"
+   (lambda (resp subscription)
+	 (-when-let* ((candidates (dart--company-prepare-candidates
+	    		               resp)))
+	   (with-current-buffer buffer
+	     (funcall callback candidates))))))
 
 (defun dart--get-completions (callback buffer)
   "Ask the analysis server for suggestions.
@@ -71,15 +78,17 @@ Argument BUFFER the buffer containing the dart file."
    "completion.getSuggestions"
    `((file . ,(buffer-file-name))
      (offset . ,(point)))
-   (lambda (response)
+   (lambda (resp)
      ;;set the dart-completion-callback on dart-mode, so that it will in turn
      ;;execute company mode callback.
-     (setq dart-completion-callback
-	   (lambda (resp)
-	     (-when-let* ((candidates (dart--company-prepare-candidates
-				       resp)))
-	       (with-current-buffer buffer
-		 (funcall callback  candidates))))))))
+     (dart--completion-result (dart--get resp 'id) callback buffer)
+     ;; (setq dart-completion-callback
+	 ;;   (lambda (resp)
+	 ;;     (-when-let* ((candidates (dart--company-prepare-candidates
+	 ;;    		       resp)))
+	 ;;       (with-current-buffer buffer
+	 ;;         (funcall callback  candidates)))))
+     )))
 
 (defun dart--completion-annotation (s)
   "Show method parameters as annotations"
@@ -103,7 +112,7 @@ Argument BUFFER the buffer containing the dart file."
   (interactive (list 'interactive))
   (cl-case command
     (interactive (company-begin-backend 'company-dart))
-    (prefix (and (derived-mode-p 'dart-mode)
+    (prefix (and (derived-mode-p 'lawndart-mode)
 		 (dart--company-prefix)))
     (candidates
      (cons :async
