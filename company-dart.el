@@ -59,15 +59,6 @@ Argument MSG contains the candidates, documentation, parameters to be displayed.
 		      (car docComplete) (cdr docComplete))))
      completions)))
 
-(defun dart--completion-result (completion-id callback buffer)
-  (dart--analysis-server-subscribe
-   "completion.results"
-   (lambda (resp subscription)
-	 (-when-let* ((candidates (dart--company-prepare-candidates
-	    		               resp)))
-	   (with-current-buffer buffer
-	     (funcall callback candidates))))))
-
 (defun dart--get-completions (callback buffer)
   "Ask the analysis server for suggestions.
 
@@ -79,16 +70,17 @@ Argument BUFFER the buffer containing the dart file."
    `((file . ,(buffer-file-name))
      (offset . ,(point)))
    (lambda (resp)
-     ;;set the dart-completion-callback on dart-mode, so that it will in turn
-     ;;execute company mode callback.
-     (dart--completion-result (dart--get resp 'id) callback buffer)
-     ;; (setq dart-completion-callback
-	 ;;   (lambda (resp)
-	 ;;     (-when-let* ((candidates (dart--company-prepare-candidates
-	 ;;    		       resp)))
-	 ;;       (with-current-buffer buffer
-	 ;;         (funcall callback  candidates)))))
-     )))
+     (-when-let (completion-id (dart--get resp 'result 'id))
+       (dart--analysis-server-subscribe
+        "completion.results"
+        (lambda (msg subscription)
+          (-when-let (id (dart--get msg 'id))
+            (when (string= completion-id id)
+              (-when-let* ((candidates (dart--company-prepare-candidates
+	    		                        msg)))
+	            (with-current-buffer buffer
+	              (funcall callback candidates)))
+              (dart--analysis-server-unsubscribe subscription)))))))))
 
 (defun dart--completion-annotation (s)
   "Show method parameters as annotations"
